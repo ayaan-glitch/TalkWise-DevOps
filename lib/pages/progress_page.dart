@@ -11,7 +11,17 @@ class ProgressPage extends StatefulWidget {
 class _ProgressPageState extends State<ProgressPage> {
   @override
   Widget build(BuildContext context) {
-    // Define colors similar to FlutterFlow theme
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+    
+    // Use theme colors instead of hardcoded colors
+    final primaryBackground = theme.scaffoldBackgroundColor;
+    final secondaryBackground = theme.cardColor;
+    final primaryText = theme.textTheme.bodyLarge!.color!;
+    final secondaryText = theme.textTheme.bodyMedium!.color!;
+    final alternate = isDarkMode ? const Color(0xFF2A2A2A) : const Color(0xFFE0E3E7);
+
+    // Keep your accent colors for charts and progress indicators
     const primaryColor = Color(0xFF4B39EF);
     const secondaryColor = Color(0xFF39D2C0);
     const tertiaryColor = Color(0xFFEE8B60);
@@ -19,12 +29,6 @@ class _ProgressPageState extends State<ProgressPage> {
     const successColor = Color(0xFF249689);
     const warningColor = Color(0xFFFFC107);
     const infoColor = Color(0xFF17C1E8);
-    
-    const primaryBackground = Color(0xFFF1F4F8);
-    const secondaryBackground = Color(0xFFFFFFFF);
-    const primaryText = Color(0xFF14181B);
-    const secondaryText = Color(0xFF57636C);
-    const alternate = Color(0xFFE0E3E7);
 
     return Scaffold(
       backgroundColor: primaryBackground,

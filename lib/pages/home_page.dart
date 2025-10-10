@@ -423,6 +423,7 @@ class _HomePageState extends State<HomePage> {
                     children: [
                       _buildNavItem(Icons.home, 'Home', primaryColor, AppRoutes.home),
                       _buildNavItem(Icons.book, 'Lessons', secondaryText, AppRoutes.lessons),
+                      _buildNavItem(Icons.chat, 'Assistant', secondaryText, AppRoutes.chatbot),
                       _buildNavItem(Icons.volume_up, 'Practice', secondaryText, AppRoutes.pronunciation),
                       _buildNavItem(Icons.bar_chart, 'Progress', secondaryText, AppRoutes.progress),
                       _buildNavItem(Icons.settings, 'Settings', secondaryText, AppRoutes.settings),
@@ -439,7 +440,9 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildActionCard(IconData icon, String title, String subtitle, Color color, {VoidCallback? onTap}) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: () {
+        Navigator.pushNamed(context, AppRoutes.chatbot);
+      },
       child: Container(
         width: double.infinity,
         decoration: BoxDecoration(
