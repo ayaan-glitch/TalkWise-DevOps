@@ -1,106 +1,54 @@
-// lib/models/progress_model.dart
-class ProgressModel {
+// lib/models/user_progress_model.dart
+class UserProgress {
   final String userId;
-  final Map<String, dynamic> lessons;
-  final Map<String, dynamic> vocabulary;
-  final Map<String, dynamic> pronunciation;
-  final DateTime lastUpdated;
-  final int totalXP;
-  final int level;
-  final int streak;
-  final Map<String, dynamic> stats;
+  final String currentLevel;
+  final int totalLessons;
+  final int completedLessons;
+  final int dayStreak;
+  final int totalXp;
+  final int currentLevelXp;
+  final int nextLevelXp;
+  final Map<String, dynamic> statistics;
+  final DateTime? lastActive;
 
-  ProgressModel({
+  UserProgress({
     required this.userId,
-    required this.lessons,
-    required this.vocabulary,
-    required this.pronunciation,
-    required this.lastUpdated,
-    required this.totalXP,
-    required this.level,
-    required this.streak,
-    required this.stats,
+    required this.currentLevel,
+    required this.totalLessons,
+    required this.completedLessons,
+    required this.dayStreak,
+    required this.totalXp,
+    required this.currentLevelXp,
+    required this.nextLevelXp,
+    required this.statistics,
+    this.lastActive,
   });
 
-  Map<String, dynamic> toMap() {
-    return {
-      'userId': userId,
-      'lessons': lessons,
-      'vocabulary': vocabulary,
-      'pronunciation': pronunciation,
-      'lastUpdated': lastUpdated.millisecondsSinceEpoch,
-      'totalXP': totalXP,
-      'level': level,
-      'streak': streak,
-      'stats': stats,
-    };
+  // In progress_model.dart - Fix the fromJson method
+factory UserProgress.fromJson(Map<String, dynamic> json) {
+  return UserProgress(
+    userId: json['user_id'] ?? 'mock_user_123', // Fixed this line
+    currentLevel: json['current_level'] ?? 'beginner',
+    totalLessons: json['total_lessons'] ?? 0,
+    completedLessons: json['completed_lessons'] ?? 0,
+    dayStreak: json['day_streak'] ?? 0,
+    totalXp: json['total_xp'] ?? 0,
+    currentLevelXp: json['current_level_xp'] ?? 0,
+    nextLevelXp: json['next_level_xp'] ?? 100,
+    statistics: Map<String, dynamic>.from(json['statistics'] ?? {}),
+    lastActive: json['last_active'] != null
+        ? DateTime.parse(json['last_active'])
+        : null,
+  );
+}
+
+  double get progressPercentage {
+    if (nextLevelXp == 0) return 0.0;
+    return (currentLevelXp / nextLevelXp).clamp(0.0, 1.0);
   }
 
-  static ProgressModel fromMap(Map<String, dynamic> map) {
-    return ProgressModel(
-      userId: map['userId'],
-      lessons: Map<String, dynamic>.from(map['lessons']),
-      vocabulary: Map<String, dynamic>.from(map['vocabulary']),
-      pronunciation: Map<String, dynamic>.from(map['pronunciation']),
-      lastUpdated: DateTime.fromMillisecondsSinceEpoch(map['lastUpdated']),
-      totalXP: map['totalXP'],
-      level: map['level'],
-      streak: map['streak'],
-      stats: Map<String, dynamic>.from(map['stats']),
-    );
-  }
-
-  // Calculate completion percentage
-  double getCompletionPercentage() {
-    if (lessons.isEmpty) return 0.0;
-    
-    int completed = 0;
-    lessons.forEach((key, value) {
-      if (value['completed'] == true) completed++;
-    });
-    
-    return completed / lessons.length;
-  }
-
-  // Get current level based on XP
-  static int calculateLevel(int xp) {
-    if (xp < 100) return 1;
-    if (xp < 300) return 2;
-    if (xp < 600) return 3;
-    if (xp < 1000) return 4;
-    if (xp < 1500) return 5;
-    return 6; // Max level for demo
-  }
-
-  // Create demo progress for testing
-  static ProgressModel demoProgress(String userId) {
-    return ProgressModel(
-      userId: userId,
-      lessons: {
-        'lesson_1': {'completed': true, 'score': 85, 'timeSpent': 15},
-        'lesson_2': {'completed': true, 'score': 90, 'timeSpent': 20},
-        'lesson_3': {'completed': false, 'score': 0, 'timeSpent': 0},
-      },
-      vocabulary: {
-        'totalWords': 120,
-        'masteredWords': 85,
-        'practiceWords': 35,
-      },
-      pronunciation: {
-        'accuracy': 75,
-        'totalPractice': 45,
-        'lastPractice': DateTime.now().millisecondsSinceEpoch,
-      },
-      lastUpdated: DateTime.now(),
-      totalXP: 450,
-      level: calculateLevel(450),
-      streak: 12,
-      stats: {
-        'totalTime': 125, // in minutes
-        'sessions': 45,
-        'daysActive': 30,
-        'averageAccuracy': 85,
-      },
-    );
+  double get overallProgress {
+    if (totalLessons == 0) return 0.0;
+    return (completedLessons / totalLessons).clamp(0.0, 1.0);
   }
 }
