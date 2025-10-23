@@ -1,6 +1,7 @@
 # talkwise
 
 A new Flutter project.
+TalkWise – English Speaking App integrated with VASA
 
 ## Getting Started
 
