@@ -1,0 +1,6 @@
+deepseek: sk-eec05f57e9d84ea2985d377f7d5c8e7a
+
+google gemini:AIzaSyAnB27TuZLdeCFMt1oEURsl4ZIWf0UENFg
+
+
+ngrok: 348IDbxqAytOI9kGkRgjyNFS8Us_2JJLFXAexLrDchCNBtsXu

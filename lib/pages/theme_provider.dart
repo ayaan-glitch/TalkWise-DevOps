@@ -1,35 +1,19 @@
-// theme_provider.dart
-import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+// lib/providers/theme_provider.dart
+import 'package:flutter/material.dart';
 
 class ThemeProvider with ChangeNotifier {
-  bool _isDarkMode = false;
+  ThemeMode _themeMode = ThemeMode.system;
 
-  bool get isDarkMode => _isDarkMode;
+  ThemeMode get themeMode => _themeMode;
+  bool get isDarkMode => _themeMode == ThemeMode.dark;
 
-  ThemeProvider() {
-    _loadThemePreference();
-  }
-
-  Future<void> _loadThemePreference() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      _isDarkMode = prefs.getBool('darkMode') ?? false;
-      notifyListeners();
-    } catch (e) {
-      debugPrint('Error loading theme preference: $e');
-    }
-  }
-
-  Future<void> toggleTheme(bool value) async {
-    _isDarkMode = value;
+  void toggleTheme(bool isDark) {
+    _themeMode = isDark ? ThemeMode.dark : ThemeMode.light;
     notifyListeners();
-    
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('darkMode', value);
-    } catch (e) {
-      debugPrint('Error saving theme preference: $e');
-    }
+  }
+
+  void setTheme(ThemeMode mode) {
+    _themeMode = mode;
+    notifyListeners();
   }
 }

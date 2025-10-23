@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import 'dart:async';
 import 'lessons_backend.dart';
 import '../models/lesson_model.dart';
-import 'lesson_detail_page.dart';
+import 'lesson_detail_page.dart'; 
 
 class LessonsPage extends StatefulWidget {
   static const String routeName = '/lessons';
@@ -15,7 +15,8 @@ class LessonsPage extends StatefulWidget {
   _LessonsPageState createState() => _LessonsPageState();
 }
 
-class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStateMixin {
+class _LessonsPageState extends State<LessonsPage>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late TabController _tabController;
   bool _isVoiceListening = false;
   String _lastSpokenCommand = '';
@@ -34,6 +35,11 @@ class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStat
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    WidgetsBinding.instance.addObserver(this);
+    _initializePage();
+  }
+
+  void _initializePage() {
     _loadLessons();
     _startVoiceListening();
   }
@@ -42,17 +48,26 @@ class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStat
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final backend = Provider.of<LessonsBackend>(context, listen: false);
       backend.clearError();
-      backend.loadLessons();
+      backend.loadLessons().then((_) {
+        _refreshProgress(); // Refresh progress after loading lessons
+      });
     });
+  }
+
+  void _refreshProgress() {
+    final backend = Provider.of<LessonsBackend>(context, listen: false);
+    backend.refreshProgress();
   }
 
   void _startVoiceListening() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final backend = Provider.of<LessonsBackend>(context, listen: false);
       // Start listening after a short delay
-      Future.delayed(Duration(seconds: 2), () {
+      Future.delayed(const Duration(seconds: 2), () {
         if (mounted) {
-          backend.speak('Voice navigation activated. Say "start lesson" to begin, or "help" for commands.');
+          backend.speak(
+            'Voice navigation activated. Say "start lesson" to begin, or "help" for commands.',
+          );
           _startListeningForCommands();
         }
       });
@@ -66,7 +81,7 @@ class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStat
 
   void _handleVoiceCommand(String command) {
     final backend = Provider.of<LessonsBackend>(context, listen: false);
-    
+
     setState(() {
       _lastSpokenCommand = command;
     });
@@ -81,7 +96,9 @@ class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStat
       _startFirstAvailableLesson(backend);
     } else if (command.contains('next lesson') || command.contains('next')) {
       _navigateToNextLesson(backend);
-    } else if (command.contains('previous lesson') || command.contains('previous') || command.contains('back')) {
+    } else if (command.contains('previous lesson') ||
+        command.contains('previous') ||
+        command.contains('back')) {
       _navigateToPreviousLesson(backend);
     } else if (command.contains('beginner')) {
       _switchToLevel('beginner', backend);
@@ -100,7 +117,7 @@ class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStat
     }
 
     // Auto-clear the command feedback after 3 seconds
-    _voiceFeedbackTimer = Timer(Duration(seconds: 3), () {
+    _voiceFeedbackTimer = Timer(const Duration(seconds: 3), () {
       if (mounted) {
         setState(() {
           _lastSpokenCommand = '';
@@ -115,44 +132,80 @@ class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStat
   void _startFirstAvailableLesson(LessonsBackend backend) {
     final currentLevel = _getCurrentLevel();
     final levelLessons = backend.getLessonsByLevel(currentLevel);
-    
+
     if (levelLessons.isEmpty) {
       backend.speak('No lessons available for $currentLevel level');
       return;
     }
 
-    final firstUnlockedLesson = levelLessons.firstWhere(
-      (lesson) => lesson.isUnlocked,
-      orElse: () => levelLessons.first,
+    // Find the first uncompleted, unlocked lesson
+    final firstAvailableLesson = levelLessons.firstWhere(
+      (lesson) => lesson.isUnlocked && !lesson.isCompleted,
+      orElse: () {
+        // If all unlocked lessons are completed, find the next locked lesson
+        final nextLockedLesson = levelLessons.firstWhere(
+          (lesson) => !lesson.isUnlocked,
+          orElse: () => levelLessons.last,
+        );
+        return nextLockedLesson;
+      },
     );
 
-    if (firstUnlockedLesson.isUnlocked) {
-      _startLesson(firstUnlockedLesson, backend);
+    if (firstAvailableLesson.isUnlocked) {
+      _startLesson(firstAvailableLesson, backend);
     } else {
-      backend.speak('The first lesson is locked. Please complete prerequisite lessons.');
+      backend.speak(
+        'The next lesson is locked. Please complete the previous lessons first.',
+      );
     }
   }
 
   void _navigateToNextLesson(LessonsBackend backend) {
     final currentLevel = _getCurrentLevel();
     final levelLessons = backend.getLessonsByLevel(currentLevel);
-    
+
     if (levelLessons.isEmpty) {
       backend.speak('No lessons available');
       return;
     }
 
-    // For simplicity, start the first lesson when saying "next lesson"
-    final firstLesson = levelLessons.firstWhere(
-      (lesson) => lesson.isUnlocked,
+    // Find the current lesson (simplified - you might want to track this better)
+    final currentLesson = _getCurrentLessonInView(levelLessons);
+
+    if (currentLesson != null) {
+      // Find the next uncompleted, unlocked lesson
+      Lesson? nextLesson;
+
+      for (var lesson in levelLessons) {
+        if (lesson.lessonNumber > currentLesson.lessonNumber &&
+            lesson.isUnlocked &&
+            !lesson.isCompleted) {
+          nextLesson = lesson;
+          break;
+        }
+      }
+
+      if (nextLesson != null) {
+        _startLesson(nextLesson, backend);
+      } else {
+        backend.speak(
+          'No next lesson available. You may have completed all lessons in this level.',
+        );
+      }
+    } else {
+      // Fallback to first available lesson
+      _startFirstAvailableLesson(backend);
+    }
+  }
+
+  Lesson? _getCurrentLessonInView(List<Lesson> levelLessons) {
+    // This is a simplified implementation
+    // In a real app, you might track which lesson is currently in view
+    // For now, return the first uncompleted lesson or the first lesson
+    return levelLessons.firstWhere(
+      (lesson) => !lesson.isCompleted,
       orElse: () => levelLessons.first,
     );
-
-    if (firstLesson.isUnlocked) {
-      _startLesson(firstLesson, backend);
-    } else {
-      backend.speak('No unlocked lessons available. Complete previous lessons first.');
-    }
   }
 
   void _navigateToPreviousLesson(LessonsBackend backend) {
@@ -175,7 +228,7 @@ class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStat
     // Extract numbers from command (e.g., "lesson 1", "start lesson 3")
     final regex = RegExp(r'(\d+)');
     final match = regex.firstMatch(command);
-    
+
     if (match != null) {
       final lessonNumber = int.parse(match.group(1)!);
       _startLessonByNumber(lessonNumber, backend);
@@ -188,7 +241,7 @@ class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStat
   void _startLessonByNumber(int lessonNumber, LessonsBackend backend) {
     final currentLevel = _getCurrentLevel();
     final levelLessons = backend.getLessonsByLevel(currentLevel);
-    
+
     final lesson = levelLessons.firstWhere(
       (lesson) => lesson.lessonNumber == lessonNumber,
       orElse: () => levelLessons.firstWhere(
@@ -200,37 +253,46 @@ class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStat
     if (lesson.isUnlocked) {
       _startLesson(lesson, backend);
     } else {
-      backend.speak('Lesson $lessonNumber is locked. Complete previous lessons first.');
+      backend.speak(
+        'Lesson $lessonNumber is locked. Complete previous lessons first.',
+      );
     }
   }
 
   void _tryFindLessonByName(String command, LessonsBackend backend) {
     final currentLevel = _getCurrentLevel();
     final levelLessons = backend.getLessonsByLevel(currentLevel);
-    
+
     // Simple keyword matching for common lesson types
     final lowerCommand = command.toLowerCase();
     Lesson? foundLesson;
 
     if (lowerCommand.contains('grammar')) {
       foundLesson = levelLessons.firstWhere(
-        (lesson) => lesson.type.toLowerCase().contains('grammar') && lesson.isUnlocked,
+        (lesson) =>
+            lesson.type.toLowerCase().contains('grammar') && lesson.isUnlocked,
         orElse: () => levelLessons.firstWhere(
           (lesson) => lesson.isUnlocked,
           orElse: () => levelLessons.first,
         ),
       );
-    } else if (lowerCommand.contains('vocabulary') || lowerCommand.contains('words')) {
+    } else if (lowerCommand.contains('vocabulary') ||
+        lowerCommand.contains('words')) {
       foundLesson = levelLessons.firstWhere(
-        (lesson) => lesson.type.toLowerCase().contains('vocabulary') && lesson.isUnlocked,
+        (lesson) =>
+            lesson.type.toLowerCase().contains('vocabulary') &&
+            lesson.isUnlocked,
         orElse: () => levelLessons.firstWhere(
           (lesson) => lesson.isUnlocked,
           orElse: () => levelLessons.first,
         ),
       );
-    } else if (lowerCommand.contains('pronunciation') || lowerCommand.contains('speak')) {
+    } else if (lowerCommand.contains('pronunciation') ||
+        lowerCommand.contains('speak')) {
       foundLesson = levelLessons.firstWhere(
-        (lesson) => lesson.type.toLowerCase().contains('pronunciation') && lesson.isUnlocked,
+        (lesson) =>
+            lesson.type.toLowerCase().contains('pronunciation') &&
+            lesson.isUnlocked,
         orElse: () => levelLessons.firstWhere(
           (lesson) => lesson.isUnlocked,
           orElse: () => levelLessons.first,
@@ -241,12 +303,14 @@ class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStat
     if (foundLesson != null && foundLesson.isUnlocked) {
       _startLesson(foundLesson, backend);
     } else {
-      backend.speak('I didn\'t understand that command. Say "help" for available commands.');
+      backend.speak(
+        'I didn\'t understand that command. Say "help" for available commands.',
+      );
     }
   }
 
   void _showVoiceHelp(LessonsBackend backend) {
-    final helpMessage = '''
+    const helpMessage = '''
     Available voice commands:
     - Say "start lesson" to begin the first available lesson
     - Say "beginner", "intermediate", or "advanced" to switch levels
@@ -255,24 +319,28 @@ class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStat
     - Say "next lesson" or "previous lesson" to navigate
     - Say "refresh" to reload lessons
     ''';
-    
+
     backend.speak(helpMessage);
   }
 
   String _getCurrentLevel() {
     switch (_tabController.index) {
-      case 0: return 'beginner';
-      case 1: return 'intermediate';
-      case 2: return 'advanced';
-      default: return 'beginner';
+      case 0:
+        return 'beginner';
+      case 1:
+        return 'intermediate';
+      case 2:
+        return 'advanced';
+      default:
+        return 'beginner';
     }
   }
 
   void _restartListening() {
     final backend = Provider.of<LessonsBackend>(context, listen: false);
-    
+
     // Wait a bit before restarting listening to avoid feedback loop
-    Future.delayed(Duration(seconds: 2), () {
+    Future.delayed(const Duration(seconds: 2), () {
       if (mounted) {
         _startListeningForCommands();
       }
@@ -281,9 +349,18 @@ class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStat
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _tabController.dispose();
     _voiceFeedbackTimer?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Refresh progress when app comes to foreground
+      _refreshProgress();
+    }
   }
 
   @override
@@ -291,7 +368,12 @@ class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStat
     return Consumer<LessonsBackend>(
       builder: (context, lessonsBackend, child) {
         _isVoiceListening = lessonsBackend.isListening;
-        
+
+        // Refresh progress when the page is built
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _refreshProgress();
+        });
+
         return Scaffold(
           backgroundColor: primaryBackground,
           appBar: AppBar(
@@ -309,6 +391,10 @@ class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStat
               labelColor: primaryColor,
               unselectedLabelColor: secondaryText,
               indicatorColor: primaryColor,
+              onTap: (index) {
+                // Refresh progress when switching tabs
+                _refreshProgress();
+              },
               tabs: const [
                 Tab(text: 'Beginner'),
                 Tab(text: 'Intermediate'),
@@ -316,6 +402,16 @@ class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStat
               ],
             ),
             actions: [
+              // Refresh button
+              IconButton(
+                icon: Icon(Icons.refresh, color: primaryText),
+                onPressed: () {
+                  _loadLessons();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Refreshing lessons...')),
+                  );
+                },
+              ),
               // Voice command status indicator
               IconButton(
                 icon: Icon(
@@ -351,7 +447,7 @@ class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStat
                   _buildLevelTab('advanced', lessonsBackend),
                 ],
               ),
-              
+
               // Voice command feedback overlay
               if (_lastSpokenCommand.isNotEmpty)
                 Positioned(
@@ -371,27 +467,24 @@ class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStat
 
   Widget _buildVoiceCommandFeedback() {
     return Container(
-      margin: EdgeInsets.all(16),
-      padding: EdgeInsets.all(12),
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: successColor.withOpacity(0.9),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         children: [
-          Icon(Icons.voice_chat, color: Colors.white, size: 20),
-          SizedBox(width: 8),
+          const Icon(Icons.voice_chat, color: Colors.white, size: 20),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
               'Command: "$_lastSpokenCommand"',
-              style: GoogleFonts.inter(
-                color: Colors.white,
-                fontSize: 14,
-              ),
+              style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
             ),
           ),
           IconButton(
-            icon: Icon(Icons.close, color: Colors.white, size: 16),
+            icon: const Icon(Icons.close, color: Colors.white, size: 16),
             onPressed: () {
               setState(() {
                 _lastSpokenCommand = '';
@@ -405,7 +498,7 @@ class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStat
 
   Widget _buildVoiceHelpBanner(LessonsBackend backend) {
     return Container(
-      padding: EdgeInsets.all(12),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: primaryColor.withOpacity(0.1),
         border: Border(top: BorderSide(color: primaryColor.withOpacity(0.3))),
@@ -413,7 +506,7 @@ class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStat
       child: Row(
         children: [
           Icon(Icons.mic, color: primaryColor, size: 20),
-          SizedBox(width: 8),
+          const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -429,10 +522,7 @@ class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStat
                 ),
                 Text(
                   'Say "start lesson", "beginner", or "help"',
-                  style: GoogleFonts.inter(
-                    fontSize: 10,
-                    color: secondaryText,
-                  ),
+                  style: GoogleFonts.inter(fontSize: 10, color: secondaryText),
                 ),
               ],
             ),
@@ -457,7 +547,9 @@ class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStat
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(primaryColor)),
+            CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(primaryColor),
+            ),
             const SizedBox(height: 16),
             Text(
               'Loading lessons...',
@@ -491,13 +583,21 @@ class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStat
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: levelLessons.length,
-      itemBuilder: (context, index) {
-        final lesson = levelLessons[index];
-        return _buildLessonCard(lesson, lessonsBackend);
-      },
+    return RefreshIndicator(
+      onRefresh: () async {
+    final backend = Provider.of<LessonsBackend>(context, listen: false);
+    backend.clearError();
+    await backend.loadLessons();
+    _refreshProgress();
+  },
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: levelLessons.length,
+        itemBuilder: (context, index) {
+          final lesson = levelLessons[index];
+          return _buildLessonCard(lesson, lessonsBackend);
+        },
+      ),
     );
   }
 
@@ -505,25 +605,47 @@ class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStat
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: lesson.isUnlocked 
+              ? _getLessonColor(lesson.type).withOpacity(0.3)
+              : Colors.grey.withOpacity(0.3),
+          width: 1,
+        ),
+      ),
       child: ListTile(
         contentPadding: const EdgeInsets.all(16),
-        leading: CircleAvatar(
-          backgroundColor: lesson.isUnlocked
-              ? _getLessonColor(lesson.type)
-              : Colors.grey,
+        leading: Container(
+          width: 50,
+          height: 50,
+          decoration: BoxDecoration(
+            color: lesson.isUnlocked
+                ? _getLessonColor(lesson.type)
+                : Colors.grey,
+            shape: BoxShape.circle,
+          ),
           child: Icon(
             _getLessonIcon(lesson.type),
             color: Colors.white,
             size: 24,
           ),
         ),
-        title: Text(
-          lesson.title,
-          style: GoogleFonts.interTight(
-            fontWeight: FontWeight.w600,
-            fontSize: 16,
-            color: lesson.isUnlocked ? primaryText : secondaryText,
-          ),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                lesson.title,
+                style: GoogleFonts.interTight(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
+                  color: lesson.isUnlocked ? primaryText : secondaryText,
+                ),
+              ),
+            ),
+            if (lesson.isCompleted)
+              Icon(Icons.check_circle, color: successColor, size: 20),
+          ],
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -552,6 +674,23 @@ class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStat
                   lesson.type,
                   style: GoogleFonts.inter(fontSize: 12, color: secondaryText),
                 ),
+                const Spacer(),
+                if (lesson.isUnlocked && !lesson.isCompleted)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: primaryColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      'Available',
+                      style: GoogleFonts.inter(
+                        fontSize: 10,
+                        color: primaryColor,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
               ],
             ),
             if (lesson.progress > 0) ...[
@@ -560,7 +699,16 @@ class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStat
                 value: lesson.progress,
                 backgroundColor: Colors.grey[200],
                 color: _getLessonColor(lesson.type),
-                minHeight: 4,
+                minHeight: 6,
+                borderRadius: BorderRadius.circular(3),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${(lesson.progress * 100).toStringAsFixed(0)}% completed',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  color: secondaryText,
+                ),
               ),
             ],
           ],
@@ -573,44 +721,6 @@ class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStat
         onTap: lesson.isUnlocked
             ? () => _startLesson(lesson, lessonsBackend)
             : () => _showLockedMessage(lessonsBackend),
-      ),
-    );
-  }
-
-  Widget _buildErrorWidget(String error) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.error_outline, size: 64, color: Colors.red),
-            const SizedBox(height: 16),
-            Text(
-              'Failed to load lessons',
-              style: GoogleFonts.interTight(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: primaryText,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              error,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(color: secondaryText),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _loadLessons,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: primaryColor,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Try Again'),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -653,16 +763,19 @@ class _LessonsPageState extends State<LessonsPage> with SingleTickerProviderStat
     lessonsBackend.speak('Starting ${lesson.title}');
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => LessonDetailPage(lesson: lesson),
-      ),
-    );
+      MaterialPageRoute(builder: (context) => LessonDetailPage(lesson: lesson)),
+    ).then((_) {
+      // Refresh progress when returning from lesson detail page
+      _refreshProgress();
+    });
   }
 
   void _showLockedMessage(LessonsBackend lessonsBackend) {
-    lessonsBackend.speak('This lesson is locked. Complete previous lessons to unlock it.');
+    lessonsBackend.speak(
+      'This lesson is locked. Complete previous lessons to unlock it.',
+    );
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
+      const SnackBar(
         content: Text('Complete previous lessons to unlock this one'),
         backgroundColor: Colors.orange,
       ),

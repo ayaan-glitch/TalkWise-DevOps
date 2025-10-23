@@ -1,5 +1,5 @@
 // lib/models/lesson_model.dart
-// In lesson_model.dart, add this enum at the top
+
 enum LessonCategory {
   tenses,
   idioms,
@@ -13,6 +13,7 @@ enum LessonCategory {
   writing,
   reading
 }
+
 class Lesson {
   final String id;
   final String title;
@@ -22,6 +23,7 @@ class Lesson {
   final String type;
   final int duration;
   final bool isUnlocked;
+  final bool isCompleted;
   final double progress;
   final String unit;
   final String category;
@@ -39,6 +41,7 @@ class Lesson {
     required this.type,
     required this.duration,
     required this.isUnlocked,
+    this.isCompleted = false,
     required this.progress,
     required this.unit,
     required this.category,
@@ -58,16 +61,17 @@ class Lesson {
       type: json['type'] ?? 'conversation',
       duration: json['duration'] ?? 0,
       isUnlocked: json['is_unlocked'] ?? false,
+      isCompleted: json['is_completed'] ?? false,
       progress: (json['progress'] ?? 0.0).toDouble(),
       unit: json['unit'] ?? '',
       category: json['category'] ?? '',
       sections: (json['sections'] as List<dynamic>?)
-              ?.map((section) => LessonSection.fromJson(section))
-              .toList() ??
+          ?.map((section) => LessonSection.fromJson(section))
+          .toList() ??
           [],
       exercises: (json['exercises'] as List<dynamic>?)
-              ?.map((exercise) => Exercise.fromJson(exercise))
-              .toList() ??
+          ?.map((exercise) => Exercise.fromJson(exercise))
+          .toList() ??
           [],
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'])
@@ -88,6 +92,7 @@ class Lesson {
       'type': type,
       'duration': duration,
       'is_unlocked': isUnlocked,
+      'is_completed': isCompleted,
       'progress': progress,
       'unit': unit,
       'category': category,
@@ -107,6 +112,7 @@ class Lesson {
     String? type,
     int? duration,
     bool? isUnlocked,
+    bool? isCompleted,
     double? progress,
     String? unit,
     String? category,
@@ -124,6 +130,7 @@ class Lesson {
       type: type ?? this.type,
       duration: duration ?? this.duration,
       isUnlocked: isUnlocked ?? this.isUnlocked,
+      isCompleted: isCompleted ?? this.isCompleted,
       progress: progress ?? this.progress,
       unit: unit ?? this.unit,
       category: category ?? this.category,
@@ -190,7 +197,7 @@ class Exercise {
     required this.id,
     required this.type,
     required this.question,
-    required this.options, // Make it required
+    required this.options,
     required this.correctAnswer,
     required this.explanation,
     this.hint,
@@ -226,3 +233,40 @@ class Exercise {
     };
   }
 }
+
+// Remove ExerciseResult from lesson_model.dart since it's now in api_service.dart
+// class ExerciseResult {
+//   final bool isCorrect;
+//   final String correctAnswer;
+//   final String explanation;
+//   final int pointsEarned;
+//   final int streak;
+//
+//   ExerciseResult({
+//     required this.isCorrect,
+//     required this.correctAnswer,
+//     required this.explanation,
+//     required this.pointsEarned,
+//     required this.streak,
+//   });
+//
+//   factory ExerciseResult.fromJson(Map<String, dynamic> json) {
+//     return ExerciseResult(
+//       isCorrect: json['is_correct'] ?? false,
+//       correctAnswer: json['correct_answer'] ?? '',
+//       explanation: json['explanation'] ?? '',
+//       pointsEarned: json['points_earned'] ?? 0,
+//       streak: json['streak'] ?? 0,
+//     );
+//   }
+//
+//   Map<String, dynamic> toJson() {
+//     return {
+//       'is_correct': isCorrect,
+//       'correct_answer': correctAnswer,
+//       'explanation': explanation,
+//       'points_earned': pointsEarned,
+//       'streak': streak,
+//     };
+//   }
+// }

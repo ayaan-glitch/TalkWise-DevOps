@@ -2,7 +2,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../app_routes.dart';
 import 'pronunciation_backend.dart';
+import 'dart:async';
+import '../services/progress_service.dart';
+import '../services/app_state_manager.dart';
+import 'home_backend.dart';
 
 class PronunciationPage extends StatefulWidget {
   const PronunciationPage({super.key});
@@ -29,21 +34,22 @@ class _PronunciationPageState extends State<PronunciationPage> {
 
   @override
   void initState() {
-    super.initState();
-    // Initialize when the page loads
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final backend = PronunciationBackend();
-      // No need to initialize TTS separately as it's done in backend
-    });
+    super.initState(); 
+  }
+
+  @override
+  void dispose() { 
+    super.dispose();
   }
 
   void _showSearchDialog(BuildContext context) {
-    final backend = PronunciationBackend();
-    String searchTerm = '';
+    // Use Provider instead of creating new instance
+  final backend = Provider.of<PronunciationBackend>(context, listen: false);
+  String searchTerm = '';
 
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
         title: Text(
           'Search Word',
           style: GoogleFonts.inter(
@@ -138,7 +144,7 @@ class _PronunciationPageState extends State<PronunciationPage> {
                   underline: Container(height: 0),
                   onChanged: (String? newValue) {
                     if (newValue != null) {
-                      backend.setLevel(newValue);
+                      backend.setDifficultyLevel(newValue);
                     }
                   },
                   items: <String>['beginner', 'intermediate', 'advanced']
@@ -176,9 +182,7 @@ class _PronunciationPageState extends State<PronunciationPage> {
               IconButton(
                 icon: Icon(Icons.refresh, color: primaryText),
                 onPressed: () {
-                  // Refresh functionality - you might want to implement this in backend
-                  backend.clearAnalysis();
-                  backend.notifyListeners();
+                  backend.refreshWords();
                 },
               ),
             ],
@@ -230,10 +234,7 @@ class _PronunciationPageState extends State<PronunciationPage> {
                           ),
                           IconButton(
                             icon: Icon(Icons.close, size: 16, color: accentColor),
-                            onPressed: () {
-                              // Use a method to clear error instead of direct assignment
-                              backend.clearError();
-                            },
+                            onPressed: backend.clearError,
                           ),
                         ],
                       ),
@@ -282,7 +283,7 @@ class _PronunciationPageState extends State<PronunciationPage> {
                           SizedBox(
                             height: 40,
                             child: AnimatedContainer(
-                              duration: Duration(milliseconds: 500),
+                              duration: const Duration(milliseconds: 500),
                               curve: Curves.easeInOut,
                               width: backend.isListening ? 40 : 20,
                               height: backend.isListening ? 40 : 20,
@@ -342,7 +343,7 @@ class _PronunciationPageState extends State<PronunciationPage> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '${backend.currentLevel[0].toUpperCase()}${backend.currentLevel.substring(1)} Level • ${currentWord.difficulty}',
+                          '${backend.currentLevel[0].toUpperCase()}${backend.currentLevel.substring(1)} Level • ${currentWord.category}',
                           style: GoogleFonts.inter(
                             fontSize: 14,
                             color: secondaryText,
@@ -443,7 +444,7 @@ class _PronunciationPageState extends State<PronunciationPage> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.arrow_back, size: 16),
+                            const Icon(Icons.arrow_back, size: 16),
                             const SizedBox(width: 4),
                             Text('Previous', style: GoogleFonts.inter()),
                           ],
@@ -464,7 +465,7 @@ class _PronunciationPageState extends State<PronunciationPage> {
                           children: [
                             Text('Next', style: GoogleFonts.inter()),
                             const SizedBox(width: 4),
-                            Icon(Icons.arrow_forward, size: 16),
+                            const Icon(Icons.arrow_forward, size: 16),
                           ],
                         ),
                       ),
@@ -515,7 +516,7 @@ class _PronunciationPageState extends State<PronunciationPage> {
 
                             // Meaning
                             Text(
-                              currentWord.definition,
+                              currentWord.meaning,
                               textAlign: TextAlign.center,
                               style: GoogleFonts.inter(
                                 fontSize: 16,
@@ -525,15 +526,47 @@ class _PronunciationPageState extends State<PronunciationPage> {
                             ),
                             const SizedBox(height: 16),
 
-                            // User pronunciation if available
-                            if (backend.userPronunciation.isNotEmpty) ...[
+                            // Examples if available
+                            if (currentWord.examples.isNotEmpty) ...[
                               Divider(color: alternate, height: 1),
                               const SizedBox(height: 16),
                               Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'Your Pronunciation:',
+                                    'Examples:',
+                                    style: GoogleFonts.inter(
+                                      fontWeight: FontWeight.w500,
+                                      fontSize: 14,
+                                      color: primaryText,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  ...currentWord.examples.take(2).map((example) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 8),
+                                    child: Text(
+                                      '• $example',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 14,
+                                        color: secondaryText,
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    ),
+                                  )),
+                                ],
+                              ),
+                            ],
+
+                            // Synonyms if available
+                            if (currentWord.synonyms.isNotEmpty) ...[
+                              const SizedBox(height: 16),
+                              Divider(color: alternate, height: 1),
+                              const SizedBox(height: 16),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Similar Words:',
                                     style: GoogleFonts.inter(
                                       fontWeight: FontWeight.w500,
                                       fontSize: 14,
@@ -542,71 +575,10 @@ class _PronunciationPageState extends State<PronunciationPage> {
                                   ),
                                   const SizedBox(height: 8),
                                   Text(
-                                    '"${backend.userPronunciation}"',
+                                    currentWord.synonyms.take(3).join(', '),
                                     style: GoogleFonts.inter(
                                       fontSize: 14,
                                       color: secondaryColor,
-                                      fontStyle: FontStyle.italic,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-
-                            // Pronunciation errors if available
-                            if (backend.pronunciationErrors.isNotEmpty) ...[
-                              const SizedBox(height: 16),
-                              Divider(color: alternate, height: 1),
-                              const SizedBox(height: 16),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Areas to Improve:',
-                                    style: GoogleFonts.inter(
-                                      fontWeight: FontWeight.w500,
-                                      fontSize: 14,
-                                      color: accentColor,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  ...backend.pronunciationErrors.take(3).map((error) => Padding(
-                                    padding: const EdgeInsets.only(bottom: 4),
-                                    child: Text(
-                                      '• $error',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 12,
-                                        color: accentColor,
-                                      ),
-                                    ),
-                                  )),
-                                ],
-                              ),
-                            ],
-
-                            // Accent analysis if available
-                            if (backend.detectedAccent != 'Unknown') ...[
-                              const SizedBox(height: 16),
-                              Divider(color: alternate, height: 1),
-                              const SizedBox(height: 16),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Accent Analysis:',
-                                    style: GoogleFonts.inter(
-                                      fontWeight: FontWeight.w500,
-                                      fontSize: 14,
-                                      color: infoColor,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    '${backend.detectedAccent} (${(backend.accentConfidence * 100).toStringAsFixed(1)}% confidence)',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 12,
-                                      color: infoColor,
-                                      fontStyle: FontStyle.italic,
                                     ),
                                   ),
                                 ],
@@ -614,6 +586,91 @@ class _PronunciationPageState extends State<PronunciationPage> {
                             ],
                           ],
                         ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Audio context toggle
+                  Container(
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: secondaryBackground,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.headset_rounded,
+                                color: primaryText,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Audio Context',
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 16,
+                                  color: primaryText,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            currentWord.context,
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              color: secondaryText,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Switch(
+                                value: backend.audioContextEnabled,
+                                onChanged: (value) {
+                                  backend.toggleAudioContext(value);
+                                },
+                                activeThumbColor: primaryColor,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                backend.audioContextEnabled ? 'Enabled' : 'Disabled',
+                                style: GoogleFonts.inter(
+                                  fontSize: 14,
+                                  color: secondaryText,
+                                ),
+                              ),
+                              const Spacer(),
+                              Icon(
+                                Icons.info_outline,
+                                color: infoColor,
+                                size: 16,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Hear phonetic and context',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  color: infoColor,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -768,7 +825,13 @@ class _PronunciationPageState extends State<PronunciationPage> {
                     width: double.infinity,
                     height: 54,
                     child: ElevatedButton(
-                      onPressed: backend.toggleRecording,
+                      onPressed: () {
+                        backend.toggleRecording();
+                        // Handle recording completion
+                        if (!backend.isRecording) {
+                          _handleRecordingComplete(context);
+                        }
+                      },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: backend.isRecording ? accentColor : primaryText,
                         foregroundColor: Colors.white,
@@ -797,72 +860,6 @@ class _PronunciationPageState extends State<PronunciationPage> {
                     ),
                   ),
                   const SizedBox(height: 24),
-
-                  // Analysis details section
-                  if (backend.pronunciationAnalysis.isNotEmpty) ...[
-                    Container(
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        color: secondaryBackground,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(Icons.analytics, size: 20, color: primaryText),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'Detailed Analysis',
-                                  style: GoogleFonts.inter(
-                                    fontWeight: FontWeight.w500,
-                                    fontSize: 16,
-                                    color: primaryText,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            // Waveform visualization if available
-                            if (backend.audioWaveform.isNotEmpty) ...[
-                              SizedBox(
-                                height: 60,
-                                child: CustomPaint(
-                                  painter: WaveformPainter(backend.audioWaveform),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                            ],
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                _buildAnalysisChip(
-                                  'Speaking Rate',
-                                  '${backend.speakingRate.toStringAsFixed(1)}x',
-                                  infoColor,
-                                ),
-                                _buildAnalysisChip(
-                                  'Stress Pattern',
-                                  backend.stressPattern.isNotEmpty ? 'Analyzed' : 'N/A',
-                                  successColor,
-                                ),
-                                _buildAnalysisChip(
-                                  'Intonation',
-                                  backend.intonationPattern.isNotEmpty ? 'Analyzed' : 'N/A',
-                                  warningColor,
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
 
                   // Accessibility section
                   Container(
@@ -961,13 +958,10 @@ class _PronunciationPageState extends State<PronunciationPage> {
                                 scrollDirection: Axis.horizontal,
                                 itemCount: backend.currentWordList.length,
                                 itemBuilder: (context, index) {
-                                  final word = backend.currentWordList[index];
+                                  final word = backend.getWordByIndex(index);
                                   final isCurrent = index == backend.currentWordIndex;
                                   return GestureDetector(
-                                    onTap: () {
-                                      // Use a method to change word index instead of direct assignment
-                                      backend.setCurrentWordIndex(index);
-                                    },
+                                    onTap: () => backend.setCurrentWordIndex(index),
                                     child: Container(
                                       margin: const EdgeInsets.only(right: 8),
                                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -988,7 +982,7 @@ class _PronunciationPageState extends State<PronunciationPage> {
                                           ),
                                           if (isCurrent) ...[
                                             const SizedBox(height: 2),
-                                            Icon(Icons.volume_up, size: 12, color: Colors.white),
+                                            const Icon(Icons.volume_up, size: 12, color: Colors.white),
                                           ],
                                         ],
                                       ),
@@ -1014,11 +1008,11 @@ class _PronunciationPageState extends State<PronunciationPage> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
-                        _buildNavItem(Icons.home_rounded, 'Home', secondaryText, () {}),
-                        _buildNavItem(Icons.menu_book_rounded, 'Lessons', secondaryText, () {}),
-                        _buildNavItem(Icons.volume_up_rounded, 'Practice', primaryColor, () {}),
-                        _buildNavItem(Icons.bar_chart_rounded, 'Progress', secondaryText, () {}),
-                        _buildNavItem(Icons.settings_rounded, 'Settings', secondaryText, () {}),
+                        _buildNavItem(Icons.home_rounded, 'Home', secondaryText, AppRoutes.home),
+                        _buildNavItem(Icons.menu_book_rounded, 'Lessons', secondaryText, AppRoutes.lessons),
+                        _buildNavItem(Icons.volume_up_rounded, 'Practice', primaryColor, AppRoutes.pronunciation),
+                        _buildNavItem(Icons.bar_chart_rounded, 'Progress', secondaryText, AppRoutes.progress),
+                        _buildNavItem(Icons.settings_rounded, 'Settings', secondaryText, AppRoutes.settings),
                       ],
                     ),
                   ),
@@ -1097,37 +1091,6 @@ class _PronunciationPageState extends State<PronunciationPage> {
     );
   }
 
-  Widget _buildAnalysisChip(String label, String value, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            '$label: ',
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              color: color,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          Text(
-            value,
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              color: color,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Color _getScoreColor(double score) {
     if (score >= 80) return successColor;
     if (score >= 60) return warningColor;
@@ -1141,9 +1104,42 @@ class _PronunciationPageState extends State<PronunciationPage> {
     return 'Try again! Listen carefully to the audio.';
   }
 
-  Widget _buildNavItem(IconData icon, String label, Color color, VoidCallback onTap) {
+ 
+// Add this method to handle recording completion with progress tracking 
+Future<void> _handleRecordingComplete(BuildContext context) async {
+  final backend = Provider.of<PronunciationBackend>(context, listen: false);
+  final homeBackend = Provider.of<HomeBackend>(context, listen: false); 
+  final appState = Provider.of<AppStateManager>(context, listen: false);
+  final currentWord = backend.getCurrentWord();
+  
+  // Wait a bit for the analysis to complete
+  await Future.delayed(const Duration(seconds: 3));
+
+  // Update progress tracking
+  final score = backend.pronunciationScore; // Get score from backend
+  if (score > 0) {
+    ProgressService.updatePronunciationProgress(
+      context, 
+      score, 
+      currentWord.word,
+      currentWord.phonetic,
+      currentWord.meaning
+    );
+
+    // ADD THESE LINES TO UPDATE HOME BACKEND
+    appState.incrementStudyTime(5); // 5 minutes for pronunciation practice
+    await homeBackend.recordPronunciationSession(); // FIXED: No parameters
+    await homeBackend.updateStudyTime(); // FIXED: No parameters
+  }
+}
+
+  Widget _buildNavItem(IconData icon, String label, Color color, String route) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: () {
+        if (ModalRoute.of(context)?.settings.name != route) {
+          Navigator.pushNamed(context, route);
+        }
+      },
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1160,37 +1156,4 @@ class _PronunciationPageState extends State<PronunciationPage> {
       ),
     );  
   }
-}
-
-// Custom painter for waveform visualization
-class WaveformPainter extends CustomPainter {
-  final List<double> waveform;
-  
-  WaveformPainter(this.waveform);
-  
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (waveform.isEmpty) return;
-    
-    final paint = Paint()
-      ..color = Color(0xFF4B39EF)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
-    
-    final path = Path();
-    final xStep = size.width / (waveform.length - 1);
-    
-    path.moveTo(0, size.height / 2 + waveform[0] * size.height / 2);
-    
-    for (int i = 1; i < waveform.length; i++) {
-      final x = i * xStep;
-      final y = size.height / 2 + waveform[i] * size.height / 2;
-      path.lineTo(x, y);
-    }
-    
-    canvas.drawPath(path, paint);
-  }
-  
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
